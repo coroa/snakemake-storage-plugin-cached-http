@@ -4,10 +4,15 @@ __email__ = "johannes.koester@uni-due.de"
 __license__ = "MIT"
 
 from typing import List, Optional, Type
-from snakemake_interface_storage_plugins.tests import TestStorageBase
-from snakemake_interface_storage_plugins.storage_provider import StorageProviderBase
+
 from snakemake_interface_storage_plugins.settings import StorageProviderSettingsBase
-from snakemake_storage_plugin_http import StorageProvider, StorageProviderSettings
+from snakemake_interface_storage_plugins.storage_provider import StorageProviderBase
+from snakemake_interface_storage_plugins.tests import TestStorageBase
+
+from snakemake_storage_plugin_cached_http import (
+    StorageProvider,
+    StorageProviderSettings,
+)
 
 
 class TestStorageNoSettings(TestStorageBase):

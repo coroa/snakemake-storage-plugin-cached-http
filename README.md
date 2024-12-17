@@ -1,3 +1,4 @@
-# snakemake-storage-plugin-http
+# snakemake-storage-plugin-cached-http
 
-Snakemake storage plugin for downloading input files from HTTP(s).
+ Snakemake storage plugin for sharing an external cache folder of downloaded
+ input files from HTTP(s).
