@@ -5,17 +5,21 @@ __copyright__ = (
 __email__ = "jonas.hoersch@openenergytransition.org"
 __license__ = "MIT"
 
+import asyncio
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, partial
 from pathlib import Path
 from typing import Optional
+from xmlrpc.client import ServerProxy
 
 import snakemake_storage_plugin_http as http_base
 import sysrsync
 from snakemake_interface_common.exceptions import WorkflowError
 from snakemake_interface_common.logging import get_logger
+from snakemake_interface_storage_plugins.common import Operation
 from snakemake_interface_storage_plugins.io import IOCacheStorageInterface, Mtime
 from snakemake_interface_storage_plugins.storage_provider import (
     StorageQueryValidationResult,
@@ -44,6 +48,17 @@ class StorageProviderSettings(http_base.StorageProviderSettings):
     )
     update: Optional[bool] = field(
         default=False, metadata={"help": "Whether to check online files for mtimes."}
+    )
+    aria2_secret: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "RPC secret for connecting to an aria2 server",
+            "env_var": True,
+        },
+    )
+    aria2_url: Optional[str] = field(
+        default="http://localhost:6800/rpc",
+        metadata={"help": "RPC url for aria2 server", "env_var": True},
     )
 
 
@@ -175,27 +190,79 @@ class StorageObject(http_base.StorageObject):
         # nothing to be done here
         pass
 
-    def retrieve_object(self):
-        if not self.state.update:
-            # Ensure that the object is accessible locally under self.local_path()
+    async def retrieve_object_with_aria2(self):
+        secret = self.provider.settings.aria2_secret
+        con = ServerProxy(self.provider.settings.aria2_url)
+        local_path = self.local_path()
+
+        try:
+            con.system.listMethods()
+        except Exception:
             logger.info(
-                f"Retrieving {self.query_path.name} from cache dir {self.provider.cache_dir}"
+                "Could not connect to aria2 RPC server; falling back to requests"
             )
+            return False
+
+        addUri = partial(con.aria2.addUri, f"token:{secret}")
+        tellStatus = partial(con.aria2.tellStatus, f"token:{secret}")
+
+        try:
+            opts = dict(dir=str(local_path.absolute().parent), out=str(local_path.name))
+            gid = addUri([str(self.query)], opts)
+            logger.info(f"Retrieving {self.query_path.name} from url using aria2")
+            while True:
+                await asyncio.sleep(1)
+                status = tellStatus(gid, ["status"])["status"]
+                if status == "complete":
+                    return True
+                elif status == "error":
+                    raise ValueError(f"Download of {self.query} errored in aria2")
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise e from None
+            logger.info(f"Unable to connect with aria2 (or wrong secret): {e}")
+            return False
+
+    # Not the public interface, but the only way to interact asynchronously
+    async def managed_retrieve(self):
+        local_path = self.local_path()
+        try:
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            if not self.state.update:
+                # Ensure that the object is accessible locally under self.local_path()
+                logger.info(
+                    f"Retrieving {self.query_path.name} from cache dir {self.provider.cache_dir}"
+                )
+                cmd = sysrsync.get_rsync_command(
+                    str(self.query_path), str(local_path), options=["-av"]
+                )
+                self._run_cmd(cmd)
+                return
+
+            if not await self.retrieve_object_with_aria2():
+                logger.info(
+                    f"Retrieving {self.query_path.name} from url using requests"
+                )
+                async with self._rate_limiter(Operation.RETRIEVE):
+                    return self.retrieve_object()
+
             cmd = sysrsync.get_rsync_command(
-                str(self.query_path), str(self.local_path()), options=["-av"]
+                str(self.local_path()), str(self.query_path), options=["-av"]
+            )
+            logger.info(
+                f"Storing {self.query_path.name} in cache dir {self.provider.cache_dir}"
             )
             self._run_cmd(cmd)
-            return
-
-        logger.info(f"Retrieving {self.query_path.name} from url")
-        super().retrieve_object()
-        cmd = sysrsync.get_rsync_command(
-            str(self.local_path()), str(self.query_path), options=["-av"]
-        )
-        logger.info(
-            f"Storing {self.query_path.name} in cache dir {self.provider.cache_dir}"
-        )
-        self._run_cmd(cmd)
+        except Exception as e:
+            # clean up potentially partially downloaded data
+            if local_path.exists():
+                if local_path.is_dir():
+                    shutil.rmtree(local_path)
+                else:
+                    local_path.remove()
+            raise WorkflowError(
+                f"Failed to retrieve storage object from {self.query}", e
+            )
 
     def _run_cmd(self, cmd: list[str]):
         try:
