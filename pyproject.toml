@@ -1,26 +1,29 @@
-[tool.poetry]
+[project]
+dependencies = [
+    "requests ~= 2.31",
+    "requests-oauthlib ~= 1.3",
+    "snakemake-interface-common ~= 1.14",
+    "snakemake-interface-storage-plugins ~= 3.0",
+    "snakemake-storage-plugin-http ~= 0.2",
+    "sysrsync ~= 1.1",
+]
 name = "snakemake-storage-plugin-cached-http"
 version = "0.0.1"
 description = "Snakemake storage plugin for downloading input files from HTTP(s)."
-authors = ["Jonas Hörsch <jonas.hoersch@openenergytransition.org>"]
+authors = [
+    { name = "Jonas Hörsch", email = "jonas.hoersch@openenergytransition.org" },
+]
 readme = "README.md"
-repository = "https://github.com/coroa/snakemake-storage-plugin-cached-http"
-documentation = "https://snakemake.github.io/snakemake-plugin-catalog/plugins/storage/cached-http.html"
-license = "MIT"
+license = { text = "MIT" }
 keywords = ["snakemake", "plugin", "storage", "http", "https", "cache"]
+requires-python = "~=3.11"
 
+[project.urls]
+homepage = "https://github.com/coroa/snakemake-storage-plugin-cached-http"
+repository = "https://github.com/coroa/snakemake-storage-plugin-cached-http.git"
+documentation = "https://snakemake.github.io/snakemake-plugin-catalog/plugins/storage/cached-http.html"
 
-[tool.poetry.dependencies]
-python = "^3.11"
-requests = "^2.31.0"
-requests-oauthlib = "^1.3.1"
-snakemake-interface-common = "^1.14.0"
-snakemake-interface-storage-plugins = "^3.0.0"
-snakemake-storage-plugin-http = "^0.2.3"
-sysrsync = "^1.1.1"
-
-
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 black = "^22.1.0"
 coverage = { extras = ["toml"], version = "^7.3.2" }
 flake8 = "^4.0.1"
